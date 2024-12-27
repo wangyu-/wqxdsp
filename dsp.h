@@ -1,9 +1,4 @@
-// orignal author: Lee
-
 #pragma once
-
-#include <vector>
-using std::vector;
 
 #define byte unsigned char
 
@@ -23,6 +18,7 @@ typedef struct {
 } tagGainShape;
 
 class Dsp {
+public:
 	byte clpBuf[18];
 	int dspCelp[15];
 	int dspCelpOff;
@@ -35,6 +31,7 @@ private:
 	void dspCelpToCelp();
 	void writeSample8000(int val);
 	void writePcm(int val);
+	void writeOnce(int val);
 
 	void dspStart();
 	void subFrame(int subframe_NUM,int s0,int s1,int fixpos);
@@ -46,6 +43,8 @@ private:
 	void root_rs(int *HXrootInPo, int *HXpcoef);
 	int fixpolefilter(int S);
 	int rounding(int mul,int P);
+public:
+	void raw_input();
 private:
 	int oldindex[ORDER];
 	int newindex[ORDER];
@@ -68,15 +67,6 @@ private:
     int tr[5];
 	int p[5], q[5] , RX[5] , SX[5];
 	int id;
-
-	vector<signed short> buf_frame;
-	vector<signed short> buf_syllable;
-	int c2=0;
-	int c4=0;
-	int c8=0;
-	int cnt=0;
-
-public:
-	void (*callback) (unsigned char *, int);
-
+	int c2,c4,c8;
+	int global_bytes_offset;
 };

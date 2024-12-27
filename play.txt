@@ -1,0 +1,3 @@
+play output file by:
+ffplay -f s16le -ar 8000 2600dump.output
+ffplay -f s16le -ar 8000 3000dump.output

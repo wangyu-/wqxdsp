@@ -1,19 +1,13 @@
-﻿// orignal author: Lee
-
-#include <cstdio>
-#include <cmath>
+﻿#include <stdio.h>
 //include "SoundStream.h"
 #include "dsp.h"
-#include <vector>
-using namespace std;
+#include "assert.h"
+
+//extern SoundStream soundStream;
 
 #define CELP_MODE 1
 #define WORD_MODE 2
 #define PCM_MODE 4
-
-const bool enable_debug_dsp=0;
-const bool delay_between_syllable=0;
-const unsigned int DSP_AUDIO_HZ = 8000;
 
 const int LSPsearchPtr[ORDER] = { 0, 8, 24, 40, 56, 72, 80, 88, 96, 104 } ;
 
@@ -138,46 +132,21 @@ const short FIXCODEBOOK[435] = {
 	0x1a1c, 0x1a1d, 0x1b1c, 0x1b1d, 0x1c1d
 };
 
-/*
-FILE *fp;
-void init_file(){
-     fp=fopen("./1.output","wb");
-}
-void close_file(){
-     fclose(fp);
-}
-void write_file(unsigned char *p, int size){
-    fwrite(p,size,1,fp);
-}*/
-
 Dsp::Dsp() {
 	id = 0;
 	lspflag = true;
 }
 
 void Dsp::reset() {
-    c2=0;
-    c4=0;
-    c8=0;
-    cnt=0;
 	dspStart();
-    buf_frame.clear();
-    buf_syllable.clear();
 	dspMode=CELP_MODE;
+	c2=0;
+	c4=0;
+	c8=-1;
+	global_bytes_offset=0;
 }
 
-/*experiment only*/
-bool unvoice0=0;
-bool unvoice1=0;
-bool unvoice2=0;
-bool unvoice3=0;
-
-bool enable_unvoice=false;
-
 void Dsp::write(int high,int low) {
-    if(enable_debug_dsp){
-        printf("%02x %02x\n",low,high);
-    }
 	if (dspMode==PCM_MODE) {
 		if (high==0xff) {
 			dspMode=CELP_MODE;
@@ -187,29 +156,7 @@ void Dsp::write(int high,int low) {
 		return;
 	}
 	if (high<0x60) {
-        cnt++;
-        //printf("cnt=%d\n",cnt);
 		int id=high>>4;
-        if(id==3&& dspCelpOff==3 ) {
-            if(enable_debug_dsp){
-                printf("id3-->%02x",high); 
-                if(high!=0x30&&high!=0x3f){
-                    printf("!!!!!!!");
-                }
-                printf("\n");
-            }
-            if(high!=0x30||true){
-                unvoice3= (high&0x01)==0; 
-                unvoice2= (high&0x02)==0; 
-                unvoice1= (high&0x04)==0; 
-                unvoice0= (high&0x08)==0;
-            }
-            if(enable_debug_dsp){
-                printf("unvoice %d %d %d %d\n",unvoice0,unvoice1,unvoice2,unvoice3);
-            }
-
-            /*assert(high==0x30||high==0x3f);*/
-        }
 		if (id<3) {
 			dspCelpOff=id;
 			dspCelp[dspCelpOff++]=(high<<8)|low;
@@ -222,97 +169,31 @@ void Dsp::write(int high,int low) {
 		}
 	} else if (high==0xa0) {
 		dspMode=low;
-        cnt=0;
-        if(enable_debug_dsp){
-		    printf("DSP_MODE %d\n",low);
-        }
-        assert(low==2);
+		printf("DSP_MODE %d\n",low);
 	} else {
-        if(enable_debug_dsp){
-		    printf("DSP_CMD %04X\n",(high<<8)|low);
-        }
-        if(high==0xc2){
-            c2=low;
-            cnt=0;
-        }
-        if(high==0xc4){
-            c4=low;
-            //if(c4==0) c4=240;
-            cnt=0;
-        }
-        if(high==0xc8){
-            c8=low;
-            cnt=0;
-        }
-        if(high==0xc3 || high==0xc1){
-            if(enable_debug_dsp){
-                printf("cnt=%d!!!!!!!!!!!!!!!!!!!!\n",cnt);
-            }
-            assert(cnt%15==0);
-            int end1=c4+240*(cnt/15)  -240;
-            //c2=0;end=buf_vec.size();
-            int end2=c4+240*(c8);
-            int end3= (c4==0? 240*(cnt/15) : c4+240*(cnt/15)  -240 );
-            assert(end2==end3);
-            //int end=c4+ buf_vec.size()  -240;
-
-            int end=end3;
-            if(enable_debug_dsp){
-                printf("<%d %d %d %d %d %d>\n",c2, c4,end1,end2,(int)buf_frame.size(),c8);
-            }
-            if(end>(int)buf_frame.size()){
-                assert(false);
-                end=buf_frame.size();
-            }
-            //c2=0;
-            //end=buf_vec.size();
-            float range=12.0;
-            for(int j=0; j+ c2<end &&j<range;j++)
-            {
-                //printf("%d  %f \n",end-1-j, j/range);
-                buf_frame[j+c2]*=j/range;
-            }
-            for(int j=0; j<range && end-1-j >=0;j++)
-            {
-                //printf("%d  %f \n",end-1-j, j/range);
-                buf_frame[(int)end-1-j]*=j/range;
-            }
-            //printf("<<%d>>\n",(int)buf_vec.size());
-            for(int i=c2;i<end;i++){
-                signed short value=buf_frame[i];
-                for(int x=0;x<DSP_AUDIO_HZ/8000;x++){
-                    buf_syllable.push_back(value);
-                }
-
-            }
-
-            if(high==0xc3||high==0xc1){
-                callback((unsigned char *)&buf_syllable[0], buf_syllable.size()*2);
-                //buf_vec2.clear();
-                if(enable_debug_dsp){
-                    printf("-----------%02x--------------\n",high);
-                }
-                if(delay_between_syllable){
-                   // SDL_Delay(1000);
-                }
-            }
-            //SDL_QueueAudio(deviceId, (void*)&vec[0], vec.size()*2);
-
-            /*c2=0;
-            c4=0;
-            buf_vec.clear();*/
-            //vec.clear();
-            cnt=0;
+		printf("DSP_CMD %04X\n",(high<<8)|low);
+		if(high==0xc2){
+            //音节起始offset
+			c2=low;
+		}
+		if(high==0xc4){
+            //音节结束offset
+			c4=low;
+		}
+		if(high==0xc8){
+            //音节长度
+			c8=low;
+		}
+		if(high==0xc3 || high==0xc1){
+            //0xc3：end of word      0xc1：end of syllable，音节结束
+            //语音合成模式遇到 0xc3/0xc1需要reset，否则有杂音  (可以用test_data1实验)
             reset();
-        }
+		}
 	}
 }
 
-
 void Dsp::dspCelpToCelp() {
-    //dspCelp[0] |=0x8000;
-    assert((dspCelp[0] & 0x8000) == 0);
-    //dspCelp[0] &=0x7fff;
+    //assert((dspCelp[0] & 0x8000) == 0);
     if ((dspCelp[0] & 0x8000) != 0)
         clpBuf[0] = 0x20;
     else
@@ -379,66 +260,46 @@ void Dsp::dspCelpToCelp() {
     dsp(clpBuf);
     int len = (dspCelp[0] & 0x8000) != 0 ? 160 : 240;
     for (int i = 0; i < len; i++) {
-        int mute=false;
-        if(enable_unvoice){
-            if(unvoice0 &&i/80==0){
-                mute=true;
-                //Sout[i]=0;
-                //continue;
+        global_bytes_offset++;
+        if(c8==-1){
+            //兼容c8没有提供的情况 （在文曲星上可能没用，文曲星发音貌似总是有c8）
+            //这种情况下理论上也不会遇到c2/c4
+            //直接
+            writeSample8000(Sout[i]);
+
+        }else{
+            //如果有c8，那就按照c1 c2截取pcm流
+            if(global_bytes_offset>=c2 && global_bytes_offset<= len*c8+ c4){
+                writeSample8000(Sout[i]);
             }
-            if(unvoice1 &&i/80==1){
-                 mute=true;
-                //Sout[i]=0;
-                //continue;
-            }
-            if(unvoice2 &&i/80==2){
-                 mute=true;
-                //Sout[i]=0;
-                //continue;
-            }
-            if(unvoice3 &&i/80==3){
-                 mute=true;
-                //Sout[i]=0;
-                //continue;
-            }
-        }
-        //vec.push_back(Sout[i]);
-        if(!mute) writeSample8000(Sout[i]);
-        else {
-            writeSample8000(0);
         }
     }
-    unvoice0=0;
-    unvoice1=0;
-    unvoice2=0;
-    unvoice3=0;
-    //printf("<<len %d>>!!!",len);
-    //SDL_QueueAudio(deviceId, (void*)Sout,len*2);
-    //c2=0;c4=0;
+}
+
+void Dsp::raw_input(){
+    dsp(clpBuf);
+   // int len = (dspCelp[0] & 0x8000) != 0 ? 160 : 240;
+    for (int i = 0; i < 240; i++) {
+        writeSample8000(Sout[i]);
+    }
 }
 
 void Dsp::writeSample8000(int val) {
-    //printf("<%d>",val);
-    //write_file((unsigned char *)&val,2);
     //通过重复5.5次，把8000Hz变成44000Hz
-    ////soundStream.write(val);
-    ////soundStream.write(val);
-    ////soundStream.write(val);
-    ////soundStream.write(val);
-    ////soundStream.write(val);
-
-    buf_frame.push_back(val);
-
-    /*
-     sound_stream_dsp.push_back(val);
-     sound_stream_dsp.push_back(val);
-     sound_stream_dsp.push_back(val);
-     sound_stream_dsp.push_back(val);
-     sound_stream_dsp.push_back(val);
+    writeOnce(val);
+    /*writeOnce(val);
+    writeOnce(val);
+    writeOnce(val);
+    writeOnce(val);
     if ((id++ & 1) > 0){
-        sound_stream_dsp.push_back(val);
-        ////soundStream.write(val);
+    	writeOnce(val);
     }*/
+}
+
+void Dsp::writeOnce(int val){
+    extern void write_test_file(int);
+    write_test_file(val);
+    ////soundStream.write(val);
 }
 
 void Dsp::writePcm(int val) {
@@ -451,6 +312,7 @@ void Dsp::dspStart() {
 	EX = 147 ;
 	PM = 0 ;
 }
+
 void Dsp::subFrame(int subframe_NUM,int s0,int s1,int fixpos) {
     int op, Amp1, Amp2;
     int Expos, Pitpos;
@@ -500,17 +362,7 @@ void Dsp::subFrame(int subframe_NUM,int s0,int s1,int fixpos) {
         LTP[Expos] = op;
         r[i + base] = fixpolefilter(op);
         int t = r[i + base] * 16;
-        int sign= t>=0? 1:-1;
-        double abs_value=fabs(t);
-        double thres=20000;
-        if (abs_value>thres){
-            //abs_value=thres+(abs_value-thres)*0.3;
-            const double r=3.5;
-            abs_value=pow(thres,1-1/r)*pow(abs_value,1/r);
-        }
-        t=abs_value*sign;
-        //assert(t>=-32768&&t<=32767);
-        if(t>32767 ||t<-32768) {printf("clip!!!!!!!!!!!!!!!! %d\n",t);}
+        t/=5;
         Sout[i + base] = (short) (t > 32767 ? 32767 : (t < -32768 ? -32768 : t));
 
         if (Expos > 0)
