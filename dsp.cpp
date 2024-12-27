@@ -1,18 +1,19 @@
 ﻿// orignal author: Lee
 
-#include <SDL_audio.h>
 #include <cstdio>
-#include <stdio.h>
+#include <cmath>
 //include "SoundStream.h"
 #include "dsp.h"
-#include <SDL2/SDL.h>
 #include <vector>
-#include "comm.h"
 using namespace std;
 
 #define CELP_MODE 1
 #define WORD_MODE 2
 #define PCM_MODE 4
+
+const bool enable_debug_dsp=0;
+const bool delay_between_syllable=0;
+const unsigned int DSP_AUDIO_HZ = 8000;
 
 const int LSPsearchPtr[ORDER] = { 0, 8, 24, 40, 56, 72, 80, 88, 96, 104 } ;
 
@@ -292,7 +293,7 @@ void Dsp::write(int high,int low) {
                     printf("-----------%02x--------------\n",high);
                 }
                 if(delay_between_syllable){
-                    SDL_Delay(1000);
+                   // SDL_Delay(1000);
                 }
             }
             //SDL_QueueAudio(deviceId, (void*)&vec[0], vec.size()*2);

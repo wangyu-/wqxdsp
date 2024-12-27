@@ -2393,7 +2393,7 @@ unsigned char test_data3[]={
 0x00,0x80,
 };
 
-extern Dsp dsp;
+Dsp dsp;
 
 void dsp_test(){
     printf("====================dsp test==========================\n");
@@ -2417,4 +2417,13 @@ void dsp_test3(){
         dsp.write(test_data3[i*2+1], test_data3[i*2]);
     }
 }
-
+void dsp_call_back(unsigned char *p,int len){
+    //SDL_QueueAudio(dsp_deviceId, p,len );
+}
+int main(){
+        dsp.callback=dsp_call_back;
+        dsp_test();
+        dsp_test2();
+        dsp_test3();
+        return 0;
+}
