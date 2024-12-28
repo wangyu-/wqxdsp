@@ -13,7 +13,6 @@ using namespace std;
 
 const bool enable_debug_dsp=0;
 const bool delay_between_syllable=0;
-const unsigned int DSP_AUDIO_HZ = 8000;
 
 const int LSPsearchPtr[ORDER] = { 0, 8, 24, 40, 56, 72, 80, 88, 96, 104 } ;
 
@@ -280,9 +279,9 @@ void Dsp::write(int high,int low) {
             //printf("<<%d>>\n",(int)buf_vec.size());
             for(int i=c2;i<end;i++){
                 signed short value=buf_frame[i];
-                for(int x=0;x<DSP_AUDIO_HZ/8000;x++){
+                //for(int x=0;x<DSP_AUDIO_HZ/8000;x++){
                     buf_syllable.push_back(value);
-                }
+                //}
 
             }
 
