@@ -219,14 +219,19 @@ void Dsp::write(int high,int low) {
 				dspCelpToCelp();
 			}
 		}
+        return;
 	} else if (high==0xa0) {
 		dspMode=low;
         cnt=0;
         if(enable_debug_dsp){
 		    printf("DSP_MODE %d\n",low);
         }
-        assert(low==2);
+        //assert(low==2);
+        return;
 	} else {
+        //if it's not word_mode then no cut is needed, the data is directly write to device
+        if(dspMode!=WORD_MODE) return;
+
         if(enable_debug_dsp){
 		    printf("DSP_CMD %04X\n",(high<<8)|low);
         }
@@ -304,6 +309,7 @@ void Dsp::write(int high,int low) {
             cnt=0;
             reset();
         }
+        return;
 	}
 }
 
@@ -425,8 +431,13 @@ void Dsp::writeSample8000(int val) {
     ////soundStream.write(val);
     ////soundStream.write(val);
     ////soundStream.write(val);
-
-    buf_frame.push_back(val);
+    if(dspMode!=WORD_MODE){
+        //if no word cut is involved, directly to decide
+        callback((unsigned char *)&val,2);
+    }else{
+        //other wise need to write to a temp buffer first
+        buf_frame.push_back(val);
+    }
 
     /*
      sound_stream_dsp.push_back(val);
