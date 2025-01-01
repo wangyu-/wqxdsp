@@ -5,6 +5,7 @@
 //include "SoundStream.h"
 #include "dsp.h"
 #include <vector>
+#include <cassert>
 using namespace std;
 
 #define CELP_MODE 1
