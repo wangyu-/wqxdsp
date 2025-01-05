@@ -152,7 +152,12 @@ void Dsp::reset() {
 	dspStart();
     buf_frame.clear();
     buf_syllable.clear();
+    printf("[DSP] reset\n");
+    if(dspMode!=CELP_MODE){
+        printf("[DSP] dsp mode change from %02x to %02x by reset\n",dspMode,CELP_MODE);
+    }
 	dspMode=CELP_MODE;
+    //dspCelpOff=0;
 }
 
 /*experiment only*/
@@ -169,6 +174,7 @@ void Dsp::write(int high,int low) {
     }
 	if (dspMode==PCM_MODE) {
 		if (high==0xff) {
+            printf("[DSP] dsp mode back to celp from pcm\n");
 			dspMode=CELP_MODE;
 		} else {
 			writePcm((high<<8)|low);
@@ -176,6 +182,7 @@ void Dsp::write(int high,int low) {
 		return;
 	}
 	if (high<0x60) {
+        if(dspMode==0) return; //dirty handling, fix me
         cnt++;
         //printf("cnt=%d\n",cnt);
 		int id=high>>4;
@@ -199,6 +206,11 @@ void Dsp::write(int high,int low) {
 
             /*assert(high==0x30||high==0x3f);*/
         }
+        if(dspCelpOff>=16){
+            printf("[DSP] oops dspCelpOff out of bound\n");
+            reset();
+            return;
+        }
 		if (id<3) {
 			dspCelpOff=id;
 			dspCelp[dspCelpOff++]=(high<<8)|low;
@@ -211,7 +223,15 @@ void Dsp::write(int high,int low) {
 		}
         return;
 	} else if (high==0xa0) {
-		dspMode=low;
+        if(!(low==CELP_MODE||low==WORD_MODE||low==PCM_MODE||low==0)){
+            printf("[DSP] oops invalid dspMode %02x\n",low);
+            reset();
+            return;
+        }
+        if(dspMode!=low){
+            printf("[DSP] dsp mode changed from %02x to %02x\n",dspMode,low);
+        }
+        dspMode=low;
         cnt=0;
         if(enable_debug_dsp){
 		    printf("DSP_MODE %d\n",low);
@@ -301,6 +321,7 @@ void Dsp::write(int high,int low) {
             buf_syllable.clear();
             dspStart();
             //reset();
+
         }
         return;
 	}
@@ -459,6 +480,12 @@ void Dsp::subFrame(int subframe_NUM,int s0,int s1,int fixpos) {
     int Expos, Pitpos;
     int base;
 
+    const int size_FIXCODEBOOK=sizeof(FIXCODEBOOK)/sizeof(FIXCODEBOOK[0]);
+    if(fixpos<0||fixpos>= size_FIXCODEBOOK){
+        printf("[DSP] oops fixpos out of bound\n");
+        if(fixpos<0) fixpos=0;
+        else fixpos=size_FIXCODEBOOK-1;
+    }
     fixpos = FIXCODEBOOK[fixpos];
     Inno.Pos[0] = ((fixpos >> 8) & 0xff) * 2 + Inno.Grid;
     Inno.Pos[1] = (fixpos & 0xff) * 2 + Inno.Grid;
