@@ -138,17 +138,6 @@ const short FIXCODEBOOK[435] = {
 	0x1a1c, 0x1a1d, 0x1b1c, 0x1b1d, 0x1c1d
 };
 
-/*
-FILE *fp;
-void init_file(){
-     fp=fopen("./1.output","wb");
-}
-void close_file(){
-     fclose(fp);
-}
-void write_file(unsigned char *p, int size){
-    fwrite(p,size,1,fp);
-}*/
 
 Dsp::Dsp() {
 	id = 0;
