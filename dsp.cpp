@@ -297,7 +297,10 @@ void Dsp::write(int high,int low) {
             buf_vec.clear();*/
             //vec.clear();
             cnt=0;
-            reset();
+            buf_frame.clear();
+            buf_syllable.clear();
+            dspStart();
+            //reset();
         }
         return;
 	}
