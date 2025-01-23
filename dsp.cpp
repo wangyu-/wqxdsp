@@ -5,8 +5,6 @@
 //include "SoundStream.h"
 #include "dsp.h"
 #include <cassert>
-#include <vector>
-using std::vector;
 
 #define CELP_MODE 1
 #define WORD_MODE 2
@@ -14,6 +12,7 @@ using std::vector;
 
 const bool enable_dsp_log = true;
 const bool enable_dsp_verbose_log = false;
+const bool enable_dsp_verbosex2_log = false;
 
 const int fade_range=12; //word模式使用渐进渐出效果避免硬连接，长度为首位12个数据
 
@@ -161,10 +160,10 @@ void Dsp::reset() {
 }
 
 void Dsp::write(int high,int low) {
-    if(enable_dsp_verbose_log) printf("%02x %02x\n",low,high);
+    if(enable_dsp_verbosex2_log) printf("[DSP] got data %02x %02x\n",high,low);
 	if (dspMode==PCM_MODE) {
 		if (high==0xff) {
-            if(enable_dsp_log) printf("[DSP] dsp mode back to celp from pcm\n");
+            if(enable_dsp_log) printf("[DSP] dsp mode back to 0x01 celp from 0x04 pcm\n");
 			dspMode=CELP_MODE;
 		} else {
 			writePcm((high<<8)|low);
@@ -172,7 +171,10 @@ void Dsp::write(int high,int low) {
 		return;
 	}
 	if (high<0x60) {//is celp data
-        if(dspMode!=WORD_MODE && dspMode!=CELP_MODE) return; //robustness check
+        if(dspMode!=WORD_MODE && dspMode!=CELP_MODE) {
+            if(enable_dsp_verbose_log) printf("[DSP] got celp data  %02x %02x in unexpected %02x mode\n",dspMode,high,low);
+            return; //robustness
+        }
         data_cnt++;
 		int id=high>>4;
         if(dspCelpOff>=16){
@@ -192,6 +194,7 @@ void Dsp::write(int high,int low) {
 		}
         return;
 	} else if (high==0xa0) {//handle DSP_CMD of change mode
+        if(enable_dsp_verbose_log) printf("[DSP] got dsp mode change cmd %02x %02x\n",high,low);
         if(low!=CELP_MODE && low!=WORD_MODE && low!=PCM_MODE && low!=0){
             if(enable_dsp_log) printf("[DSP] oops invalid dspMode %02x\n",low);
             reset();
@@ -202,11 +205,11 @@ void Dsp::write(int high,int low) {
         data_cnt=0;
         return;
 	} else {// handle other DSP_CMD such as c1 c2 c3 c4 c8 
+        if(enable_dsp_verbose_log){
+		    printf("[DSP] got DSP_CMD %02x %02x\n",high,low);
+        }
         //if it's not word_mode then no cut is needed, the data is directly write to device
         if(dspMode!=WORD_MODE) return;
-        if(enable_dsp_verbose_log){
-		    printf("DSP_CMD %04X\n",(high<<8)|low);
-        }
         if(high==0xc2){//音节起始offset
             c2=low;
             data_cnt=0;
@@ -221,7 +224,7 @@ void Dsp::write(int high,int low) {
         }
         else if(high==0xc3 || high==0xc1){//0xc3：end of word   0xc1：end of syllable，音节结束
             if(enable_dsp_verbose_log){
-                printf("cnt=%d\n",data_cnt);
+                printf("[DSP] data_cnt=%d\n",data_cnt);
             }
             assert(data_cnt%15==0);
             int end1= c4+240*(data_cnt/15)  -240;
@@ -230,7 +233,7 @@ void Dsp::write(int high,int low) {
             assert(end2==end3); //verify they are actually same
             int end=end3;
             if(enable_dsp_verbose_log){
-                printf("<c2=%d c4=%d end1=%d end2=%d buf_frame.size()=%d c8=%d>\n",c2, c4,end1,end2,(int)buf_frame.size(),c8);
+                printf("[DSP] c2=%d c4=%d end1=%d end2=%d buf_frame.size()=%d c8=%d\n",c2, c4,end1,end2,(int)buf_frame.size(),c8);
             }
             if(end>(int)buf_frame.size()){
                 if(enable_dsp_log) printf("[DSP] oops, end=%d buf_frame.size()=%d, out of range\n",end,(int)buf_frame.size());
@@ -364,7 +367,7 @@ void Dsp::subFrame(int subframe_NUM,int s0,int s1,int fixpos) {
 
     const int size_FIXCODEBOOK=sizeof(FIXCODEBOOK)/sizeof(FIXCODEBOOK[0]);
     if(fixpos<0||fixpos>= size_FIXCODEBOOK){
-        if(enable_dsp_log) printf("[DSP] oops fixpos out of bound\n");
+        if(enable_dsp_log) printf("[DSP] oops fixpos %d out of bound\n",fixpos);
         if(fixpos<0) fixpos=0;
         else fixpos=size_FIXCODEBOOK-1;
     }
