@@ -2394,32 +2394,40 @@ unsigned char test_data3[]={
 };
 
 Dsp dsp;
+FILE *fp;
+void dsp_call_back(unsigned char *p,int len){
+    fwrite(p,1,len,fp);
+}
 
 void dsp_test(){
     printf("====================dsp test==========================\n");
+    fp=fopen("./1.output","wb");
     dsp.reset();
     for(int i=0;i<sizeof(test_data)/2;i++){
         dsp.write(test_data[i*2+1], test_data[i*2]);
     }
+    fclose(fp);
 }
 void dsp_test2(){
     printf("====================dsp test2==========================\n");
+    fp=fopen("./2.output","wb");
     dsp.reset();
     for(int i=0;i<sizeof(test_data2)/2;i++){
         dsp.write(test_data2[i*2+1], test_data2[i*2]);
     }
+    fclose(fp);
 }
 
 void dsp_test3(){
     printf("====================dsp test3==========================\n");
+    fp=fopen("./3.output","wb");
     dsp.reset();
     for(int i=0;i<sizeof(test_data3)/2;i++){
         dsp.write(test_data3[i*2+1], test_data3[i*2]);
     }
+    fclose(fp);
 }
-void dsp_call_back(unsigned char *p,int len){
-    //SDL_QueueAudio(dsp_deviceId, p,len );
-}
+
 int main(){
         dsp.callback=dsp_call_back;
         dsp_test();
