@@ -70,7 +70,6 @@ private:
 	int id;
 
 	vector<signed short> buf_frame;
-	vector<signed short> buf_syllable;
 	int c2=0;
 	int c4=0;
 	int c8=0;

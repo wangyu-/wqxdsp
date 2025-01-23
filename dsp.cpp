@@ -12,8 +12,10 @@ using namespace std;
 #define WORD_MODE 2
 #define PCM_MODE 4
 
-const bool enable_debug_dsp=0;
-const bool delay_between_syllable=0;
+const bool enable_dsp_log = true;
+const bool enable_dsp_verbose_log = false;
+
+const int fade_range=12; //word模式使用渐进渐出效果避免硬连接，长度为首位12个数据
 
 const int LSPsearchPtr[ORDER] = { 0, 8, 24, 40, 56, 72, 80, 88, 96, 104 } ;
 
@@ -151,25 +153,17 @@ void Dsp::reset() {
     cnt=0;
 	dspStart();
     buf_frame.clear();
-    buf_syllable.clear();
-    printf("[DSP] reset\n");
-    if(dspMode!=CELP_MODE){
-        printf("[DSP] dsp mode change from %02x to %02x by reset\n",dspMode,CELP_MODE);
+    if(enable_dsp_log) {
+        printf("[DSP] reset\n");
+        if(dspMode!=CELP_MODE){
+            printf("[DSP] dsp mode change from %02x to %02x by reset\n",dspMode,CELP_MODE);
+        }
     }
 	dspMode=CELP_MODE;
-    //dspCelpOff=0;
 }
 
-/*experiment only*/
-bool unvoice0=0;
-bool unvoice1=0;
-bool unvoice2=0;
-bool unvoice3=0;
-
-bool enable_unvoice=false;
-
 void Dsp::write(int high,int low) {
-    if(enable_debug_dsp){
+    if(enable_dsp_verbose_log){
         printf("%02x %02x\n",low,high);
     }
 	if (dspMode==PCM_MODE) {
@@ -181,31 +175,10 @@ void Dsp::write(int high,int low) {
 		}
 		return;
 	}
-	if (high<0x60) {
-        if(dspMode==0) return; //dirty handling, fix me
+	if (high<0x60) {//is celp data
+        if(dspMode!=WORD_MODE && dspMode!=CELP_MODE) return; //robustness check
         cnt++;
-        //printf("cnt=%d\n",cnt);
 		int id=high>>4;
-        if(id==3&& dspCelpOff==3 ) {
-            if(enable_debug_dsp){
-                printf("id3-->%02x",high); 
-                if(high!=0x30&&high!=0x3f){
-                    printf("!!!!!!!");
-                }
-                printf("\n");
-            }
-            if(high!=0x30||true){
-                unvoice3= (high&0x01)==0; 
-                unvoice2= (high&0x02)==0; 
-                unvoice1= (high&0x04)==0; 
-                unvoice0= (high&0x08)==0;
-            }
-            if(enable_debug_dsp){
-                printf("unvoice %d %d %d %d\n",unvoice0,unvoice1,unvoice2,unvoice3);
-            }
-
-            /*assert(high==0x30||high==0x3f);*/
-        }
         if(dspCelpOff>=16){
             printf("[DSP] oops dspCelpOff out of bound\n");
             reset();
@@ -222,106 +195,64 @@ void Dsp::write(int high,int low) {
 			}
 		}
         return;
-	} else if (high==0xa0) {
-        if(!(low==CELP_MODE||low==WORD_MODE||low==PCM_MODE||low==0)){
-            printf("[DSP] oops invalid dspMode %02x\n",low);
+	} else if (high==0xa0) {//handle DSP_CMD of change mode
+        if(low!=CELP_MODE && low!=WORD_MODE && low!=PCM_MODE && low!=0){
+            if(enable_dsp_log) printf("[DSP] oops invalid dspMode %02x\n",low);
             reset();
             return;
         }
-        if(dspMode!=low){
-            printf("[DSP] dsp mode changed from %02x to %02x\n",dspMode,low);
-        }
+        if(enable_dsp_log && dspMode!=low) printf("[DSP] dsp mode changed from %02x to %02x\n",dspMode,low);
         dspMode=low;
         cnt=0;
-        if(enable_debug_dsp){
-		    printf("DSP_MODE %d\n",low);
-        }
-        //assert(low==2);
         return;
-	} else {
+	} else {// handle other DSP_CMD such as c1 c2 c3 c4 c8 
         //if it's not word_mode then no cut is needed, the data is directly write to device
         if(dspMode!=WORD_MODE) return;
-
-        if(enable_debug_dsp){
+        if(enable_dsp_verbose_log){
 		    printf("DSP_CMD %04X\n",(high<<8)|low);
         }
         if(high==0xc2){
             c2=low;
             cnt=0;
         }
-        if(high==0xc4){
+        else if(high==0xc4){
             c4=low;
-            //if(c4==0) c4=240;
             cnt=0;
         }
-        if(high==0xc8){
+        else if(high==0xc8){
             c8=low;
             cnt=0;
         }
-        if(high==0xc3 || high==0xc1){
-            if(enable_debug_dsp){
-                printf("cnt=%d!!!!!!!!!!!!!!!!!!!!\n",cnt);
+        else if(high==0xc3 || high==0xc1){
+            if(enable_dsp_verbose_log){
+                printf("cnt=%d\n",cnt);
             }
             assert(cnt%15==0);
-            int end1=c4+240*(cnt/15)  -240;
-            //c2=0;end=buf_vec.size();
-            int end2=c4+240*(c8);
-            int end3= (c4==0? 240*(cnt/15) : c4+240*(cnt/15)  -240 );
-            assert(end2==end3);
-            //int end=c4+ buf_vec.size()  -240;
-
+            int end1= c4+240*(cnt/15)  -240;
+            int end2= c4+240*(c8); //easier way to calculate
+            int end3= (c4==0? 240*(cnt/15) : c4+240*(cnt/15)  -240 ); //dissassembled from ggvsim
+            assert(end2==end3); //verify they are actually same
             int end=end3;
-            if(enable_debug_dsp){
-                printf("<%d %d %d %d %d %d>\n",c2, c4,end1,end2,(int)buf_frame.size(),c8);
+            if(enable_dsp_verbose_log){
+                printf("<c2=%d c4=%d end1=%d end2=%d buf_frame.size()=%d c8=%d>\n",c2, c4,end1,end2,(int)buf_frame.size(),c8);
             }
             if(end>(int)buf_frame.size()){
                 assert(false);
-                end=buf_frame.size();
+                //end=buf_frame.size();
             }
-            //c2=0;
-            //end=buf_vec.size();
-            float range=12.0;
-            for(int j=0; j+ c2<end &&j<range;j++)
-            {
-                //printf("%d  %f \n",end-1-j, j/range);
-                buf_frame[j+c2]*=j/range;
+            for(int j=0; j+ c2<end &&j<fade_range;j++){
+                buf_frame[j+c2]*=j*1.0/fade_range;
             }
-            for(int j=0; j<range && end-1-j >=0;j++)
-            {
-                //printf("%d  %f \n",end-1-j, j/range);
-                buf_frame[(int)end-1-j]*=j/range;
+            for(int j=0; j<fade_range && end-1-j >=0;j++){
+                buf_frame[(int)end-1-j]*=j*1.0/fade_range;
             }
-            //printf("<<%d>>\n",(int)buf_vec.size());
             for(int i=c2;i<end;i++){
-                signed short value=buf_frame[i];
-                //for(int x=0;x<DSP_AUDIO_HZ/8000;x++){
-                    buf_syllable.push_back(value);
-                //}
-
+                short value=buf_frame[i];
+                callback((unsigned char *)&value,sizeof(short));
             }
-
-            if(high==0xc3||high==0xc1){
-                callback((unsigned char *)&buf_syllable[0], buf_syllable.size()*2);
-                //buf_vec2.clear();
-                if(enable_debug_dsp){
-                    printf("-----------%02x--------------\n",high);
-                }
-                if(delay_between_syllable){
-                   // SDL_Delay(1000);
-                }
-            }
-            //SDL_QueueAudio(deviceId, (void*)&vec[0], vec.size()*2);
-
-            /*c2=0;
-            c4=0;
-            buf_vec.clear();*/
-            //vec.clear();
             cnt=0;
             buf_frame.clear();
-            buf_syllable.clear();
             dspStart();
-            //reset();
-
         }
         return;
 	}
@@ -398,47 +329,11 @@ void Dsp::dspCelpToCelp() {
     dsp(clpBuf);
     int len = (dspCelp[0] & 0x8000) != 0 ? 160 : 240;
     for (int i = 0; i < len; i++) {
-        int mute=false;
-        if(enable_unvoice){
-            if(unvoice0 &&i/80==0){
-                mute=true;
-                //Sout[i]=0;
-                //continue;
-            }
-            if(unvoice1 &&i/80==1){
-                 mute=true;
-                //Sout[i]=0;
-                //continue;
-            }
-            if(unvoice2 &&i/80==2){
-                 mute=true;
-                //Sout[i]=0;
-                //continue;
-            }
-            if(unvoice3 &&i/80==3){
-                 mute=true;
-                //Sout[i]=0;
-                //continue;
-            }
-        }
-        //vec.push_back(Sout[i]);
-        if(!mute) writeSample8000(Sout[i]);
-        else {
-            writeSample8000(0);
-        }
+        writeSample8000(Sout[i]);
     }
-    unvoice0=0;
-    unvoice1=0;
-    unvoice2=0;
-    unvoice3=0;
-    //printf("<<len %d>>!!!",len);
-    //SDL_QueueAudio(deviceId, (void*)Sout,len*2);
-    //c2=0;c4=0;
 }
 
 void Dsp::writeSample8000(int val) {
-    //printf("<%d>",val);
-    //write_file((unsigned char *)&val,2);
     //通过重复5.5次，把8000Hz变成44000Hz
     ////soundStream.write(val);
     ////soundStream.write(val);
@@ -446,23 +341,12 @@ void Dsp::writeSample8000(int val) {
     ////soundStream.write(val);
     ////soundStream.write(val);
     if(dspMode!=WORD_MODE){
-        //if no word cut is involved, directly to decide
+        //if no word cut is involved, directly to device
         callback((unsigned char *)&val,2);
     }else{
         //other wise need to write to a temp buffer first
         buf_frame.push_back(val);
     }
-
-    /*
-     sound_stream_dsp.push_back(val);
-     sound_stream_dsp.push_back(val);
-     sound_stream_dsp.push_back(val);
-     sound_stream_dsp.push_back(val);
-     sound_stream_dsp.push_back(val);
-    if ((id++ & 1) > 0){
-        sound_stream_dsp.push_back(val);
-        ////soundStream.write(val);
-    }*/
 }
 
 void Dsp::writePcm(int val) {
@@ -482,7 +366,7 @@ void Dsp::subFrame(int subframe_NUM,int s0,int s1,int fixpos) {
 
     const int size_FIXCODEBOOK=sizeof(FIXCODEBOOK)/sizeof(FIXCODEBOOK[0]);
     if(fixpos<0||fixpos>= size_FIXCODEBOOK){
-        printf("[DSP] oops fixpos out of bound\n");
+        if(enable_dsp_log) printf("[DSP] oops fixpos out of bound\n");
         if(fixpos<0) fixpos=0;
         else fixpos=size_FIXCODEBOOK-1;
     }
@@ -539,7 +423,6 @@ void Dsp::subFrame(int subframe_NUM,int s0,int s1,int fixpos) {
             abs_value=pow(thres,1-1/r)*pow(abs_value,1/r);
         }
         t=abs_value*sign;
-        //assert(t>=-32768&&t<=32767);
         if(t>32767 ||t<-32768) {printf("clip!!!!!!!!!!!!!!!! %d\n",t);}
         Sout[i + base] = (short) (t > 32767 ? 32767 : (t < -32768 ? -32768 : t));
 
