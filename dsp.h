@@ -69,11 +69,9 @@ private:
 	int p[5], q[5] , RX[5] , SX[5];
 	int id;
 
-	vector<signed short> buf_frame;
-	int c2=0;
-	int c4=0;
-	int c8=0;
-	int cnt=0;
+	vector<short> buf_frame;
+	int c2,c4,c8;
+	int data_cnt;
 
 public:
 	void (*callback) (unsigned char *, int);

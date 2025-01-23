@@ -4,9 +4,9 @@
 #include <cmath>
 //include "SoundStream.h"
 #include "dsp.h"
-#include <vector>
 #include <cassert>
-using namespace std;
+#include <vector>
+using std::vector;
 
 #define CELP_MODE 1
 #define WORD_MODE 2
@@ -140,17 +140,15 @@ const short FIXCODEBOOK[435] = {
 	0x1a1c, 0x1a1d, 0x1b1c, 0x1b1d, 0x1c1d
 };
 
-
 Dsp::Dsp() {
 	id = 0;
 	lspflag = true;
+    c2=c4=c8=0;
+    data_cnt=0;
 }
 
 void Dsp::reset() {
-    c2=0;
-    c4=0;
-    c8=0;
-    cnt=0;
+    data_cnt=0;
 	dspStart();
     buf_frame.clear();
     if(enable_dsp_log) {
@@ -163,12 +161,10 @@ void Dsp::reset() {
 }
 
 void Dsp::write(int high,int low) {
-    if(enable_dsp_verbose_log){
-        printf("%02x %02x\n",low,high);
-    }
+    if(enable_dsp_verbose_log) printf("%02x %02x\n",low,high);
 	if (dspMode==PCM_MODE) {
 		if (high==0xff) {
-            printf("[DSP] dsp mode back to celp from pcm\n");
+            if(enable_dsp_log) printf("[DSP] dsp mode back to celp from pcm\n");
 			dspMode=CELP_MODE;
 		} else {
 			writePcm((high<<8)|low);
@@ -177,10 +173,10 @@ void Dsp::write(int high,int low) {
 	}
 	if (high<0x60) {//is celp data
         if(dspMode!=WORD_MODE && dspMode!=CELP_MODE) return; //robustness check
-        cnt++;
+        data_cnt++;
 		int id=high>>4;
         if(dspCelpOff>=16){
-            printf("[DSP] oops dspCelpOff out of bound\n");
+            if(enable_dsp_log) printf("[DSP] oops dspCelpOff out of bound\n");
             reset();
             return;
         }
@@ -203,7 +199,7 @@ void Dsp::write(int high,int low) {
         }
         if(enable_dsp_log && dspMode!=low) printf("[DSP] dsp mode changed from %02x to %02x\n",dspMode,low);
         dspMode=low;
-        cnt=0;
+        data_cnt=0;
         return;
 	} else {// handle other DSP_CMD such as c1 c2 c3 c4 c8 
         //if it's not word_mode then no cut is needed, the data is directly write to device
@@ -211,34 +207,34 @@ void Dsp::write(int high,int low) {
         if(enable_dsp_verbose_log){
 		    printf("DSP_CMD %04X\n",(high<<8)|low);
         }
-        if(high==0xc2){
+        if(high==0xc2){//音节起始offset
             c2=low;
-            cnt=0;
+            data_cnt=0;
         }
-        else if(high==0xc4){
+        else if(high==0xc4){//音节结束offset
             c4=low;
-            cnt=0;
+            data_cnt=0;
         }
-        else if(high==0xc8){
+        else if(high==0xc8){//音节长度
             c8=low;
-            cnt=0;
+            data_cnt=0;
         }
-        else if(high==0xc3 || high==0xc1){
+        else if(high==0xc3 || high==0xc1){//0xc3：end of word   0xc1：end of syllable，音节结束
             if(enable_dsp_verbose_log){
-                printf("cnt=%d\n",cnt);
+                printf("cnt=%d\n",data_cnt);
             }
-            assert(cnt%15==0);
-            int end1= c4+240*(cnt/15)  -240;
+            assert(data_cnt%15==0);
+            int end1= c4+240*(data_cnt/15)  -240;
             int end2= c4+240*(c8); //easier way to calculate
-            int end3= (c4==0? 240*(cnt/15) : c4+240*(cnt/15)  -240 ); //dissassembled from ggvsim
+            int end3= (c4==0? 240*(data_cnt/15) : c4+240*(data_cnt/15)  -240 ); //dissassembled from ggvsim
             assert(end2==end3); //verify they are actually same
             int end=end3;
             if(enable_dsp_verbose_log){
                 printf("<c2=%d c4=%d end1=%d end2=%d buf_frame.size()=%d c8=%d>\n",c2, c4,end1,end2,(int)buf_frame.size(),c8);
             }
             if(end>(int)buf_frame.size()){
-                assert(false);
-                //end=buf_frame.size();
+                if(enable_dsp_log) printf("[DSP] oops, end=%d buf_frame.size()=%d, out of range\n",end,(int)buf_frame.size());
+                end=buf_frame.size();
             }
             for(int j=0; j+ c2<end &&j<fade_range;j++){
                 buf_frame[j+c2]*=j*1.0/fade_range;
@@ -246,23 +242,19 @@ void Dsp::write(int high,int low) {
             for(int j=0; j<fade_range && end-1-j >=0;j++){
                 buf_frame[(int)end-1-j]*=j*1.0/fade_range;
             }
-            for(int i=c2;i<end;i++){
-                short value=buf_frame[i];
-                callback((unsigned char *)&value,sizeof(short));
+            for(int i=c2;i<end;i++){//按offset截取音节，否则部分单词会多出不存在的音节。（实验数据：女声congratulant)
+                callback((unsigned char *)&buf_frame[i],sizeof(buf_frame[i]));
             }
-            cnt=0;
+            data_cnt=0;
             buf_frame.clear();
-            dspStart();
+            dspStart(); //语音合成模式遇到 0xc3/0xc1需要重置一部分状态，否则有杂音  (实验数据：男声dog's tounge)
         }
         return;
 	}
 }
 
-
 void Dsp::dspCelpToCelp() {
-    //dspCelp[0] |=0x8000;
-    assert((dspCelp[0] & 0x8000) == 0);
-    //dspCelp[0] &=0x7fff;
+    //assert((dspCelp[0] & 0x8000) == 0);
     if ((dspCelp[0] & 0x8000) != 0)
         clpBuf[0] = 0x20;
     else
@@ -335,14 +327,19 @@ void Dsp::dspCelpToCelp() {
 
 void Dsp::writeSample8000(int val) {
     //通过重复5.5次，把8000Hz变成44000Hz
-    ////soundStream.write(val);
-    ////soundStream.write(val);
-    ////soundStream.write(val);
-    ////soundStream.write(val);
-    ////soundStream.write(val);
+    /*
+    soundStream.write(val);
+    soundStream.write(val);
+    soundStream.write(val);
+    soundStream.write(val);
+    soundStream.write(val);
+    if ((id++ & 1) > 0)
+        soundStream.write(val);*/
+
+    short value=val&0xffff;
     if(dspMode!=WORD_MODE){
-        //if no word cut is involved, directly to device
-        callback((unsigned char *)&val,2);
+        //if no word cut is involved, write directly to device
+        callback((unsigned char *)&value,sizeof(value));
     }else{
         //other wise need to write to a temp buffer first
         buf_frame.push_back(val);
@@ -359,6 +356,7 @@ void Dsp::dspStart() {
 	EX = 147 ;
 	PM = 0 ;
 }
+
 void Dsp::subFrame(int subframe_NUM,int s0,int s1,int fixpos) {
     int op, Amp1, Amp2;
     int Expos, Pitpos;
@@ -414,16 +412,6 @@ void Dsp::subFrame(int subframe_NUM,int s0,int s1,int fixpos) {
         LTP[Expos] = op;
         r[i + base] = fixpolefilter(op);
         int t = r[i + base] * 16;
-        int sign= t>=0? 1:-1;
-        double abs_value=fabs(t);
-        double thres=20000;
-        if (abs_value>thres){
-            //abs_value=thres+(abs_value-thres)*0.3;
-            const double r=3.5;
-            abs_value=pow(thres,1-1/r)*pow(abs_value,1/r);
-        }
-        t=abs_value*sign;
-        if(t>32767 ||t<-32768) {printf("clip!!!!!!!!!!!!!!!! %d\n",t);}
         Sout[i + base] = (short) (t > 32767 ? 32767 : (t < -32768 ? -32768 : t));
 
         if (Expos > 0)
@@ -689,4 +677,3 @@ int Dsp::rounding(int mul,int P)
 {
     return (mul + (1 << (P - 1))) >> P;
 }
-
