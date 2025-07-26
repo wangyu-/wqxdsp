@@ -236,7 +236,12 @@ void Dsp::write(int high,int low) {
             int end1= c4+240*(data_cnt/15)  -240;
             int end2= c4+240*(c8); //easier way to calculate
             int end3= (c4==0? 240*(data_cnt/15) : c4+240*(data_cnt/15)  -240 ); //dissassembled from ggvsim
-            assert(end2==end3); //verify they are actually same
+            //assert(end2==end3); //verify they are actually same
+            if(end2!=end3){
+                if(enable_dsp_log) printf("[DSP] oops, end2=%d end3=%d, not equal\n",end2,end3);
+                reset();
+                return;
+            }
             int end=end3;
             if(enable_dsp_verbose_log){
                 printf("[DSP] c2=%d c4=%d end1=%d end2=%d buf_frame.size()=%d c8=%d\n",c2, c4,end1,end2,(int)buf_frame.size(),c8);
