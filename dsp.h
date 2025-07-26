@@ -26,8 +26,8 @@ class Dsp {
 	byte clpBuf[18];
 	int dspCelp[15];
 	int dspCelpOff;
-	int dspMode;
 public:
+	int dspMode;
 	Dsp();
 	void reset();
 	void write(int high,int low);
