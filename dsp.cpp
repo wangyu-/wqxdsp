@@ -6,6 +6,7 @@
 #include "dsp.h"
 #include <cassert>
 
+#define NONE_MODE 0 //ywang add
 #define CELP_MODE 1
 #define WORD_MODE 2
 #define PCM_MODE 4
@@ -165,8 +166,13 @@ void Dsp::reset() {
 	dspMode=CELP_MODE;
 }
 
+//note: data ( <0x60 ), or 0xa0, or 0xc* is handled inside dsp.cpp
+//      in PCM_MODE, 0xff is handled in dsp.cpp to go back to CELP_MODE
+//      others are handled in wqx emulator logic
 void Dsp::write(int high,int low) {
     if(enable_dsp_verbosex2_log) printf("[DSP] got data %02x %02x\n",high,low);
+
+    //special PCM_MODE
 	if (dspMode==PCM_MODE) {
 		if (high==0xff) {
             if(enable_dsp_log) printf("[DSP] dsp mode back to 0x01 celp from 0x04 pcm\n");
@@ -174,7 +180,7 @@ void Dsp::write(int high,int low) {
 		} else {
 			writePcm((high<<8)|low);
 		}
-		return;
+		return; //return, skip everything rest
 	}
 	if (high<0x60) {//is celp data
         if(dspMode!=WORD_MODE && dspMode!=CELP_MODE) {
@@ -200,8 +206,9 @@ void Dsp::write(int high,int low) {
 		}
         return;
 	} else if (high==0xa0) {//handle DSP_CMD of change mode
+        //should be impossible to get 0xa1 0x0a2 etc
         if(enable_dsp_verbose_log) printf("[DSP] got dsp mode change cmd %02x %02x\n",high,low);
-        if(low!=CELP_MODE && low!=WORD_MODE && low!=PCM_MODE && low!=0){
+        if(low!=CELP_MODE && low!=WORD_MODE && low!=PCM_MODE && low!=NONE_MODE){
             if(enable_dsp_log) printf("[DSP] oops invalid dspMode %02x\n",low);
             reset();
             return;
@@ -210,7 +217,7 @@ void Dsp::write(int high,int low) {
         dspMode=low;
         data_cnt=0;
         return;
-	} else {// handle other DSP_CMD such as c1 c2 c3 c4 c8 
+	} else if ((high & 0xf0) ==0xc0 ) {// handle c1 c2 c3 c4 c8, tts synthesis param
         if(enable_dsp_verbose_log){
 		    printf("[DSP] got DSP_CMD %02x %02x\n",high,low);
         }
@@ -232,7 +239,12 @@ void Dsp::write(int high,int low) {
             if(enable_dsp_verbose_log){
                 printf("[DSP] data_cnt=%d\n",data_cnt);
             }
-            assert(data_cnt%15==0);
+            if(data_cnt%15!=0){
+                if(enable_dsp_log) printf("[DSP] oops, data_cnt=%d while got %02x, mod 15 != 0, reset\n",data_cnt,high);
+                reset();
+                return;
+            }
+            //assert(data_cnt%15==0);
             int end1= c4+240*(data_cnt/15)  -240;
             int end2= c4+240*(c8); //easier way to calculate
             int end3= (c4==0? 240*(data_cnt/15) : c4+240*(data_cnt/15)  -240 ); //dissassembled from ggvsim
@@ -262,6 +274,8 @@ void Dsp::write(int high,int low) {
             data_cnt=0;
             buf_frame.clear();
             dspStart(); //语音合成模式遇到 0xc3/0xc1需要重置一部分状态，否则有杂音  (实验数据：男声dog's tounge)
+        }else{
+            if(enable_dsp_log) printf("[DSP] oops, unhandled tts param cmd, high=%02x low= %02x\n", high, low);
         }
         return;
 	}
