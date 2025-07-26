@@ -10,9 +10,15 @@
 #define WORD_MODE 2
 #define PCM_MODE 4
 
-const bool enable_dsp_log = true;
-const bool enable_dsp_verbose_log = false;
-const bool enable_dsp_verbosex2_log = false;
+bool enable_dsp_log = true;
+bool enable_dsp_verbose_log = false;
+bool enable_dsp_verbosex2_log = false;
+
+void set_dsp_log_level(int level){
+    enable_dsp_log = level >= 1;
+    enable_dsp_verbose_log = level >= 2;
+    enable_dsp_verbosex2_log = level >= 3;
+}
 
 const int fade_range=12; //word模式使用渐进渐出效果避免硬连接，长度为首位12个数据
 

@@ -77,3 +77,5 @@ public:
 	void (*callback) (unsigned char *, int);
 
 };
+
+void set_dsp_log_level(int level);
